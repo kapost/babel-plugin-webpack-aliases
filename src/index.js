@@ -82,6 +82,25 @@ function transformFilePathWithAliases(
     return filePath
 }
 
+function transformLoaderWithAliases(
+    aliasConf,
+    filePath
+) {
+    for (const aliasFrom in aliasConf) {
+        if (aliasConf.hasOwnProperty(aliasFrom)) {
+            const aliasTo = aliasConf[aliasFrom].replace(/-loader$/, '')
+            const regex = new RegExp(`^${aliasFrom}(-loader)?(\?[^!]+)?!`)
+
+            // If the regex matches, replace by the right config
+            if (regex.test(filePath)) {
+                return filePath.replace(aliasFrom, `${aliasTo}!`)
+            }
+        }
+    }
+
+    return filePath
+}
+
 export default function transformImportsWithAliases({ types: t }) {
     return {
         visitor: {
@@ -110,14 +129,15 @@ export default function transformImportsWithAliases({ types: t }) {
                     return
                 }
 
-                // Get the webpack alias config
-                const aliasConf = config.resolve.alias
-
                 const { source } = path.node
                 // Exit if the import path is not a string literal
                 if (!t.isStringLiteral(source)) {
                     return
                 }
+
+                // Get the webpack alias config
+                const aliasConf = config.resolve.alias
+                const loaderAliasConf = config.resolveLoader.alias
 
                 // Get the path of the StringLiteral
                 const originalFilePath = source.value
@@ -126,8 +146,12 @@ export default function transformImportsWithAliases({ types: t }) {
                     originalFilePath,
                     dirname(filename)
                 )
+                const requiredFileWithLoaderPath = transformLoaderWithAliases(
+                    loaderAliasConf,
+                    requiredFilePath
+                )
 
-                path.node.source = StringLiteral(requiredFilePath)
+                path.node.source = StringLiteral(requiredFileWithLoaderPath)
             },
             CallExpression(
                 path,
@@ -150,12 +174,9 @@ export default function transformImportsWithAliases({ types: t }) {
                 }
 
                 // Exit if there's no alias config
-                if (!config.resolve || !config.resolve.alias) {
+                if ((!config.resolve || !config.resolve.alias) && (!config.resolveLoader && !config.resolveLoader.alias)) {
                     return
                 }
-
-                // Get the webpack alias config
-                const aliasConf = config.resolve.alias
 
                 const {
                     callee: { name: calleeName },
@@ -170,6 +191,10 @@ export default function transformImportsWithAliases({ types: t }) {
                     return
                 }
 
+                // Get the webpack alias config
+                const aliasConf = config.resolve.alias
+                const loaderAliasConf = config.resolveLoader.alias
+
                 // Get the path of the StringLiteral
                 const originalFilePath = args[0].value
                 const requiredFilePath = transformFilePathWithAliases(
@@ -177,8 +202,12 @@ export default function transformImportsWithAliases({ types: t }) {
                     originalFilePath,
                     dirname(filename)
                 )
+                const requiredFileWithLoaderPath = transformLoaderWithAliases(
+                    loaderAliasConf,
+                    requiredFilePath
+                )
 
-                path.node.arguments = [StringLiteral(requiredFilePath)]
+                path.node.arguments = [StringLiteral(requiredFileWithLoaderPath)]
             }
         }
     }
